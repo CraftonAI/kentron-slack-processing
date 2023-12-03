@@ -99,3 +99,97 @@ async def create_database(file: UploadFile):
     conn.close()
 
     return {"channels": channel_data}
+
+
+@app.get("/get_user_messages/{username}")
+async def get_user_messages(username: str):
+    # Establish a connection to the PostgreSQL database
+    conn = psycopg2.connect(
+        host="localhost",
+        database="your_database_name",
+        user="your_username",
+        password="your_password"
+    )
+
+    # Retrieve the user ID for the given username
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM user_mapping WHERE username = %s", (username,))
+    user_id = cursor.fetchone()
+    cursor.close()
+
+    if user_id is None:
+        return {"error": "User not found"}
+
+    # Retrieve the messages for the given user ID
+    cursor = conn.cursor()
+    cursor.execute("SELECT message, timestamp FROM single_user_messages WHERE user_id = %s", (user_id[0],))
+    messages = cursor.fetchall()
+    cursor.close()
+
+    # Map user IDs to usernames
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, username FROM user_mapping")
+    user_mapping = cursor.fetchall()
+    cursor.close()
+
+    user_mapping_dict = {user[0]: user[1] for user in user_mapping}
+
+    # Format the messages with usernames and timestamps
+    formatted_messages = []
+    for message in messages:
+        user_id = message[0]
+        timestamp = message[1]
+        username = user_mapping_dict.get(user_id, "Unknown User")
+        formatted_messages.append({"username": username, "message": message[0], "timestamp": timestamp})
+
+    conn.close()
+
+    return {"messages": formatted_messages}
+
+
+@app.get("/get_user_messages_between")
+async def get_user_messages_between(user1: str, user2: str):
+    # Establish a connection to the PostgreSQL database
+    conn = psycopg2.connect(
+        host="localhost",
+        database="your_database_name",
+        user="your_username",
+        password="your_password"
+    )
+
+    # Retrieve the user IDs for the given usernames
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM user_mapping WHERE username = %s OR username = %s", (user1, user2))
+    user_ids = cursor.fetchall()
+    cursor.close()
+
+    if len(user_ids) != 2:
+        return {"error": "One or both users not found"}
+
+    user_id1, user_id2 = user_ids[0][0], user_ids[1][0]
+
+    # Retrieve the messages between the two users
+    cursor = conn.cursor()
+    cursor.execute("SELECT message, timestamp FROM two_user_messages WHERE (user_id = %s AND message LIKE %s) OR (user_id = %s AND message LIKE %s)", (user_id1, f"%{user_id2}%", user_id2, f"%{user_id1}%"))
+    messages = cursor.fetchall()
+    cursor.close()
+
+    # Map user IDs to usernames
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, username FROM user_mapping")
+    user_mapping = cursor.fetchall()
+    cursor.close()
+
+    user_mapping_dict = {user[0]: user[1] for user in user_mapping}
+
+    # Format the messages with usernames and timestamps
+    formatted_messages = []
+    for message in messages:
+        user_id = message[0]
+        timestamp = message[1]
+        username = user_mapping_dict.get(user_id, "Unknown User")
+        formatted_messages.append({"username": username, "message": message[0], "timestamp": timestamp})
+
+    conn.close()
+
+    return {"messages": formatted_messages}
