@@ -40,6 +40,10 @@ async def create_database(file: UploadFile):
         df = pd.json_normalize(data)
         df_list.append(df)
 
+        # Convert JSON file to CSV
+        csv_file = os.path.splitext(json_file)[0] + '.csv'
+        df.to_csv(csv_file, index=False)
+
     # Concatenate all DataFrames into a single DataFrame
     df = pd.concat(df_list, ignore_index=True)
 
@@ -52,7 +56,7 @@ async def create_database(file: UploadFile):
     cursor.execute("CREATE TABLE IF NOT EXISTS two_user_messages (user_id VARCHAR, message VARCHAR)")
 
     for index, row in df.iterrows():
-        file_name = row['file_name']
+        file_name = os.path.basename(row['file_name'])
         file_data = row.to_json()
         cursor.execute("INSERT INTO processed_files (file_name, file_data) VALUES (%s, %s)", (file_name, file_data))
 
@@ -76,8 +80,7 @@ async def create_database(file: UploadFile):
 
     csv_file_path = '../csv/messages.csv'
     df = pd.read_csv(csv_file_path)
-    filtered_df = df[df['user_id'] == user_id]
-    for index, row in filtered_df.iterrows():
+    for index, row in df.iterrows():
         user_id = row['user_id']
         message = row['message']
         cursor.execute("INSERT INTO single_user_messages (user_id, message) VALUES (%s, %s)", (user_id, message))
@@ -106,9 +109,9 @@ async def get_user_messages(username: str):
     # Establish a connection to the PostgreSQL database
     conn = psycopg2.connect(
         host="localhost",
-        database="your_database_name",
-        user="your_username",
-        password="your_password"
+        database="kentron",
+        user="postgres",
+        password="Kingfr@ncesco015"
     )
 
     # Retrieve the user ID for the given username
@@ -152,9 +155,9 @@ async def get_user_messages_between(user1: str, user2: str):
     # Establish a connection to the PostgreSQL database
     conn = psycopg2.connect(
         host="localhost",
-        database="your_database_name",
-        user="your_username",
-        password="your_password"
+        database="kentron",
+        user="postgres",
+        password="Kingfr@ncesco015"
     )
 
     # Retrieve the user IDs for the given usernames
