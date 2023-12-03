@@ -12,9 +12,9 @@ async def create_database(file: UploadFile):
     # Establish a connection to the PostgreSQL database
     conn = psycopg2.connect(
         host="localhost",
-        database="your_database_name",
-        user="your_username",
-        password="your_password"
+        database="kentron",
+        user="postgres",
+        password="Kingfr@ncesco015"
     )
 
     # Specify the directory to extract the zip file to
