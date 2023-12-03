@@ -49,7 +49,7 @@ async def create_database(file: UploadFile):
 
     # Create tables and insert data into the PostgreSQL database
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS processed_files (id SERIAL PRIMARY KEY, file_name VARCHAR, file_data JSONB)")
+    # cursor.execute("CREATE TABLE IF NOT EXISTS processed_files (id SERIAL PRIMARY KEY, file_name VARCHAR, file_data JSONB)")
     cursor.execute("CREATE TABLE IF NOT EXISTS user_mapping (user_id VARCHAR PRIMARY KEY, username VARCHAR)")
     cursor.execute("CREATE TABLE IF NOT EXISTS channel_info (channel_name VARCHAR, members VARCHAR, type VARCHAR)")
     cursor.execute("CREATE TABLE IF NOT EXISTS single_user_messages (user_id VARCHAR, message VARCHAR)")
@@ -64,7 +64,7 @@ async def create_database(file: UploadFile):
     df = pd.read_csv(csv_file_path)
     user_mapping = df.set_index('user_id')['username'].to_dict()
     for user_id, username in user_mapping.items():
-        cursor.execute("INSERT INTO user_mapping (user_id, username) VALUES (%s, %s)", (user_id, username))
+        cursor.execute("INSERT INTO user_mapping (id, name) VALUES (%s, %s)", (user_id, username))
 
     csv_file_path = '../csv/channels.csv'
     df = pd.read_csv(csv_file_path)
