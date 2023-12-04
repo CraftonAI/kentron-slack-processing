@@ -165,7 +165,6 @@ async def get_user_messages_between(username1: str, username2: str):
             df = pd.read_csv(file_path, usecols=["user", "text", "type", "ts"])
             df['ts'] = pd.to_datetime(df['ts'], unit='s')  # Convert ts column to human-readable timestamp
             merged_data = pd.concat([merged_data, df])
-            print(merged_data.head())
 
     # Filter the merged data based on the usernames
     user_id_to_username = {
