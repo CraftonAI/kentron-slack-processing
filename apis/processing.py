@@ -3,7 +3,10 @@ import json
 import os
 import pandas as pd
 import psycopg2
-from fastapi import FastAPI, UploadFile
+import os
+import pandas as pd
+from flask import Flask, request, jsonify
+from fastapi import FastAPI, UploadFile, Request
 
 app = FastAPI()
 
@@ -49,7 +52,7 @@ async def create_database(file: UploadFile):
 
     # Create tables and insert data into the PostgreSQL database
     cursor = conn.cursor()
-    # cursor.execute("CREATE TABLE IF NOT EXISTS processed_files (id SERIAL PRIMARY KEY, file_name VARCHAR, file_data JSONB)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS processed_files (id SERIAL PRIMARY KEY, file_name VARCHAR, file_data JSONB)")
     cursor.execute("CREATE TABLE IF NOT EXISTS user_mapping (user_id VARCHAR PRIMARY KEY, username VARCHAR)")
     cursor.execute("CREATE TABLE IF NOT EXISTS channel_info (channel_name VARCHAR, members VARCHAR, type VARCHAR)")
     cursor.execute("CREATE TABLE IF NOT EXISTS single_user_messages (user_id VARCHAR, message VARCHAR)")
@@ -78,7 +81,7 @@ async def create_database(file: UploadFile):
             channel_info_df = channel_info_df.append({'channel_name': channel_name, 'members': member, 'type': channel_type}, ignore_index=True)
             cursor.execute("INSERT INTO channel_info (channel_name, members, type) VALUES (%s, %s, %s)", (channel_name, member, channel_type))
 
-    csv_file_path = '../csv/messages.csv'
+    csv_file_path = '../notebooks/messages.csv'
     df = pd.read_csv(csv_file_path)
     for index, row in df.iterrows():
         user_id = row['user_id']
@@ -105,94 +108,82 @@ async def create_database(file: UploadFile):
 
 
 @app.get("/get_user_messages/{username}")
-async def get_user_messages(username: str):
-    # Establish a connection to the PostgreSQL database
-    conn = psycopg2.connect(
-        host="localhost",
-        database="kentron",
-        user="postgres",
-        password="Kingfr@ncesco015"
-    )
+def get_messages(username: str):
+    user_id_to_username = {
+    "U05RA88PCPR": "sam",
+    "U05S28VB3ED": "admin",
+    "U05S28X7ETB": "payagude.m",
+    "U05TG4W1YUF": "nikhil993477",
+    "U05TQLV3ZC4": "satish",
+    "U05TTNUB27P": "sajals1146",
+    "U05TZ4E0G5A": "shubhangisharma2411",
+    "U05V4DFEHS8": "tanushsethi55"
+    }
+    # Read the merged_msg.csv file
+    merged_data = pd.read_csv('../notebooks/merged_msg.csv')
 
-    # Retrieve the user ID for the given username
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM user_mapping WHERE username = %s", (username,))
-    user_id = cursor.fetchone()
-    cursor.close()
+    # Replace user_id with username in user column
+    merged_data['user'] = merged_data['user'].replace(user_id_to_username)
 
-    if user_id is None:
-        return {"error": "User not found"}
+    # Filter the data based on the username
+    filtered_data = merged_data[merged_data['user'] == username]
 
-    # Retrieve the messages for the given user ID
-    cursor = conn.cursor()
-    cursor.execute("SELECT message, timestamp FROM single_user_messages WHERE user_id = %s", (user_id[0],))
-    messages = cursor.fetchall()
-    cursor.close()
+    # Convert the filtered messages to JSON
+    messages_json = filtered_data.to_json(orient='records')
 
-    # Map user IDs to usernames
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username FROM user_mapping")
-    user_mapping = cursor.fetchall()
-    cursor.close()
-
-    user_mapping_dict = {user[0]: user[1] for user in user_mapping}
-
-    # Format the messages with usernames and timestamps
-    formatted_messages = []
-    for message in messages:
-        user_id = message[0]
-        timestamp = message[1]
-        username = user_mapping_dict.get(user_id, "Unknown User")
-        formatted_messages.append({"username": username, "message": message[0], "timestamp": timestamp})
-
-    conn.close()
-
-    return {"messages": formatted_messages}
+    return messages_json
 
 
 @app.get("/get_user_messages_between")
-async def get_user_messages_between(user1: str, user2: str):
-    # Establish a connection to the PostgreSQL database
-    conn = psycopg2.connect(
-        host="localhost",
-        database="kentron",
-        user="postgres",
-        password="Kingfr@ncesco015"
-    )
+async def get_user_messages_between(username1: str, username2: str):
+    # Read the dms_output.csv file
+    dms_data = pd.read_csv('../processed_data/dms_output.csv')
 
-    # Retrieve the user IDs for the given usernames
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM user_mapping WHERE username = %s OR username = %s", (user1, user2))
-    user_ids = cursor.fetchall()
-    cursor.close()
+    # Filter the data based on the usernames
+    filtered_data = dms_data[(dms_data['member_1'] == username1) & (dms_data['member_2'] == username2)]
+    if filtered_data.empty:
+        return {'message': 'No matching records found'}
 
-    if len(user_ids) != 2:
-        return {"error": "One or both users not found"}
+    # Get the folder name from the id column of the matched record
+    folder_name = filtered_data.iloc[0]['id']
 
-    user_id1, user_id2 = user_ids[0][0], user_ids[1][0]
+    # Search for the folder with the same name
+    folder_path = None
+    for root, dirs, files in os.walk('../data4/raw'):
+        if folder_name in dirs:
+            folder_path = os.path.join(root, folder_name)
+            break
 
-    # Retrieve the messages between the two users
-    cursor = conn.cursor()
-    cursor.execute("SELECT message, timestamp FROM two_user_messages WHERE (user_id = %s AND message LIKE %s) OR (user_id = %s AND message LIKE %s)", (user_id1, f"%{user_id2}%", user_id2, f"%{user_id1}%"))
-    messages = cursor.fetchall()
-    cursor.close()
+    if folder_path is None:
+        return {'message': 'Folder not found'}
 
-    # Map user IDs to usernames
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username FROM user_mapping")
-    user_mapping = cursor.fetchall()
-    cursor.close()
+    # Merge all the CSV files in the folder
+    merged_data = pd.DataFrame()
+    for file in os.listdir(folder_path):
+        if file.endswith('.csv'):
+            file_path = os.path.join(folder_path, file)
+            df = pd.read_csv(file_path, usecols=["user", "text", "type", "ts"])
+            df['ts'] = pd.to_datetime(df['ts'], unit='s')  # Convert ts column to human-readable timestamp
+            merged_data = pd.concat([merged_data, df])
+            print(merged_data.head())
 
-    user_mapping_dict = {user[0]: user[1] for user in user_mapping}
+    # Filter the merged data based on the usernames
+    user_id_to_username = {
+    "U05RA88PCPR": "sam",
+    "U05S28VB3ED": "admin",
+    "U05S28X7ETB": "payagude.m",
+    "U05TG4W1YUF": "nikhil993477",
+    "U05TQLV3ZC4": "satish",
+    "U05TTNUB27P": "sajals1146",
+    "U05TZ4E0G5A": "shubhangisharma2411",
+    "U05V4DFEHS8": "tanushsethi55"
+    }
+    merged_data['user'] = merged_data['user'].replace(user_id_to_username)
+    filtered_messages = merged_data[(merged_data['user'] == username1) | (merged_data['user'] == username2)]
 
-    # Format the messages with usernames and timestamps
-    formatted_messages = []
-    for message in messages:
-        user_id = message[0]
-        timestamp = message[1]
-        username = user_mapping_dict.get(user_id, "Unknown User")
-        formatted_messages.append({"username": username, "message": message[0], "timestamp": timestamp})
 
-    conn.close()
+    # Convert the filtered messages to JSON
+    messages_json = filtered_messages.to_json(orient='records')
 
-    return {"messages": formatted_messages}
+    return messages_json
+
