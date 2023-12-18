@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile
 import os
 import zipfile
 import json
+import psycopg2
 import pandas as pd
 
 app = FastAPI()
@@ -86,10 +87,10 @@ async def extract_and_convert(file: UploadFile):
                         df = pd.concat([df, temp_df[column_names]], ignore_index=True)
 
     df['ts'] = pd.to_datetime(df['ts'], unit='s')
+    df['user'] = df['user'].replace(id_name_mapping)
 
     # Save the dataframe to a csv file
     df.to_csv("../data4/processed/merged_msg.csv", index=False)
-
 
     dms_df = pd.read_csv('../data4/raw/dms.csv')
 
@@ -104,11 +105,71 @@ async def extract_and_convert(file: UploadFile):
 
     # Concatenate the original DataFrame with the new columns
     dms_df = pd.concat([dms_df, members_df], axis=1)
+    # dms_df['']
 
     # Display the modified DataFrame
     dms_df.to_csv('../data4/processed/dms_output.csv', index=False)
 
-    return {"message": "Files extracted and converted successfully.", "id_name_mapping": id_name_mapping}
+    # Establish a connection to the PostgreSQL database
+    conn = psycopg2.connect(
+        host="localhost",
+        database="kentron",
+        user="postgres",
+        password="Kingfr@ncesco015"
+    )
+
+    # Create a cursor
+    cursor = conn.cursor()
+
+    # Specify the directory containing the processed files
+    processed_directory = '../data4/processed/'
+
+    # Get a list of CSV files in the directory
+    csv_files = [os.path.join(processed_directory, f) for f in os.listdir(processed_directory) if f.endswith('.csv')]
+
+    # Iterate through each CSV file
+    for csv_file in csv_files:
+        # Read the CSV file
+        df = pd.read_csv(csv_file)
+
+        # Get the table name from the file name
+        table_name = os.path.splitext(os.path.basename(csv_file))[0]
+
+        # Create the table in the database if it doesn't exist
+        create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
+        for column in df.columns:
+            column_type = df[column].dtype
+            if column_type == 'int64':
+                create_table_query += f"{column} INTEGER,"
+            elif column_type == 'float64':
+                create_table_query += f"{column} FLOAT,"
+            elif column_type == 'bool':
+                create_table_query += f"{column} BOOLEAN,"
+            else:
+                create_table_query += f'"{column}" VARCHAR,'  # Change the column name to be enclosed in double quotes
+        create_table_query = create_table_query.rstrip(',') + ")"
+        cursor.execute(create_table_query)
+
+            # Replace NaN values with None
+        df = df.where(pd.notnull(df), None)
+
+        # Insert the data into the table
+        for index, row in df.iterrows():
+            insert_query = f"INSERT INTO {table_name} VALUES ("
+            for value in row.values:
+                if value is None:
+                    value = 'None'  # Replace None with the string 'None'
+                elif isinstance(value, str):
+                    # Escape single quotes in the string
+                    value = value.replace("'", "''")
+                insert_query += f"'{value}',"
+            insert_query = insert_query.rstrip(',') + ")"
+            cursor.execute(insert_query)
+
+    # Commit the changes
+    conn.commit()
+
+    return {"message": "Files added to PostgreSQL database successfully.", "id_name_mapping": id_name_mapping}
 
 @app.get("/get_user_messages/{username}")
 def get_messages(username: str):
@@ -117,7 +178,7 @@ def get_messages(username: str):
     merged_data = pd.read_csv('../data4/processed/merged_msg.csv')
 
     # Replace user_id with username in user column
-    merged_data['user'] = merged_data['user'].replace(id_name_mapping)
+    # merged_data['user'] = merged_data['user'].replace(id_name_mapping)
 
     # Filter the data based on the username
     filtered_data = merged_data[merged_data['user'] == username]
@@ -161,7 +222,6 @@ async def get_user_messages_between(username1: str, username2: str):
             merged_data = pd.concat([merged_data, df])
 
     # Filter the merged data based on the usernames
-    merged_data['user'] = merged_data['user'].replace(id_name_mapping)
     filtered_messages = merged_data[(merged_data['user'] == username1) | (merged_data['user'] == username2)]
 
     # Convert the filtered messages to JSON
